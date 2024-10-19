@@ -1,4 +1,5 @@
 -- Add migration script here
+PRAGMA foreign_keys = ON;
 CREATE TABLE practice_regiment (
     id INTEGER PRIMARY KEY AUTOINCREMENT,       -- Automatically incrementing ID
     date TIMESTAMP NOT NULL      -- Date of the practice regiment

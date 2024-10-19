@@ -1,7 +1,8 @@
-use chrono::{Date, DateTime, Local, NaiveDateTime};
+use chrono::{Date, DateTime, Local, NaiveDateTime, ParseError};
 use dotenv::dotenv;
 use rumqttc::{AsyncClient, Client, Event, MqttOptions, Packet, QoS};
 use sqlx::{Error, SqlitePool};
+use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;
 use std::time::Duration;
@@ -10,16 +11,21 @@ use tokio::sync::Mutex;
 use tokio::task;
 
 const DATABASE_URL: &str = "sqlite:./practice.db";
-#[derive(Debug, sqlx::FromRow)]
-struct PracticeRegiment {
-    id: i32,
-    date: NaiveDateTime,
-}
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug)]
 struct PracticePiece {
-    id: i32,
-    practice_regiment_id: i32,
-    name: String,
+    name: String, // Each piece has a name, which could be NULL
+}
+
+#[derive(Debug)]
+struct PracticeRegiment {
+    id: i64,                    // Unique ID for the regiment
+    pieces: Vec<PracticePiece>, // Vector of associated practice pieces
+}
+
+#[derive(Debug)]
+struct PracticeRow {
+    regiment_id: i64,
+    piece_name: String, // This allows for NULL values in `name`
 }
 
 #[command]
@@ -35,11 +41,72 @@ async fn create_full_regiment(pool: tauri::State<'_, SqlitePool>) -> Result<(), 
     match insert_practice_regiment_with_transaction(&pool, date, piece_names).await {
         Ok(_) => Ok(()),
         Err(e) => {
-            let error_message = format!("Failed to insert regiment: {:?}", e); // More detailed error
+            let error_message = format!("Failed to insert regiment in command: {:?}", e); // More detailed error
             println!("{}", error_message); // Log to console
             Err(error_message) // Return detailed error to the frontend
         }
     }
+}
+
+#[command]
+async fn load_practice_regiments(
+    pool: tauri::State<'_, SqlitePool>,
+) -> Result<Vec<String>, String> {
+    // Fetch practice regiments and their associated piece names
+    // Fetch regiments and their associated pieces
+    let rows = sqlx::query_as!(
+        PracticeRow,
+        r#"
+            SELECT pr.id as "regiment_id!",  pn.name as piece_name
+            FROM practice_regiment pr
+            LEFT JOIN practice_piece pn ON pr.id = pn.practice_regiment_id
+            ORDER BY pr.date DESC
+            "#
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| format!("Failed to load data: {}", e))?;
+
+    // Create a hashmap to group regiments and their pieces
+    let mut regiments_map: HashMap<i64, PracticeRegiment> = HashMap::new();
+
+    // Iterate through the results and group the pieces by regiment
+    for row in rows {
+        let regiment_id = row.regiment_id;
+
+        // Parse `regiment_date` from String to NaiveDateTime
+
+        // Get or insert the regiment
+        let regiment = regiments_map
+            .entry(regiment_id)
+            .or_insert(PracticeRegiment {
+                id: regiment_id,
+                pieces: Vec::new(),
+            });
+
+        // Add the piece to the regiment
+        regiment.pieces.push(PracticePiece {
+            name: row.piece_name, // Non-nullable String
+        });
+    }
+
+    // Convert the regiments into a vector of formatted strings
+    let mut regiments = Vec::new();
+    for (_id, regiment) in regiments_map {
+        let mut regiment_info = format!("Regiment ID: {}", regiment.id);
+
+        // Add piece names to the regiment's display
+        for piece in regiment.pieces {
+            regiment_info.push_str(&format!(
+                "\n    Piece Name: {}",
+                piece.name // Non-nullable String
+            ));
+        }
+
+        regiments.push(regiment_info);
+    }
+
+    Ok(regiments) // Return the list of formatted strings
 }
 
 #[tokio::main]
@@ -51,6 +118,10 @@ async fn main() {
     let pool = SqlitePool::connect(&database_url)
         .await
         .expect("Failed to create SQLite pool");
+    let _result = sqlx::query!("PRAGMA foreign_keys = ON")
+        .execute(&pool)
+        .await
+        .expect("Failed to enable foreign keys");
     tauri::Builder::default()
         .manage(pool.clone()) // Manage the SQLite pool in Tauri state
         .setup(|app| {
@@ -63,7 +134,10 @@ async fn main() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![create_full_regiment]) // Register the command
+        .invoke_handler(tauri::generate_handler![
+            create_full_regiment,
+            load_practice_regiments
+        ]) // Register the command
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -81,7 +155,7 @@ async fn insert_practice_regiment_with_transaction(
         "INSERT INTO practice_regiment (date) VALUES (?)",
         date_str // Ensure we're passing a string format date
     )
-    .execute(pool)
+    .execute(&mut transaction) // Use the transaction here
     .await;
 
     match result {
@@ -92,7 +166,7 @@ async fn insert_practice_regiment_with_transaction(
         }
     }
     let regiment_id: i32 = sqlx::query_scalar!("SELECT last_insert_rowid()")
-        .fetch_one(pool)
+        .fetch_one(&mut transaction)
         .await?;
 
     println!("Last inserted regiment_id: {}", regiment_id);

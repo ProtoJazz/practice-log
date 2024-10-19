@@ -9,7 +9,7 @@ import { Alignment, Button, Navbar } from "@blueprintjs/core";
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
-
+  const [regiments, setRegiments] = useState<string[]>([]);
   async function greet() {
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
     setGreetMsg(await invoke("greet", { name }));
@@ -23,6 +23,20 @@ function App() {
       alert(`Failed to create practice regiment: ${error}`);
     }
   }
+
+  async function loadRegiments() {
+    try {
+      const loadedRegiments: string[] = await invoke("load_practice_regiments");
+      setRegiments(loadedRegiments);
+    } catch (error) {
+      console.error("Failed to load regiments:", error);
+    }
+  }
+
+  useEffect(() => {
+    // Optionally load regiments when the component mounts
+    loadRegiments();
+  }, []);
 
   const [bpm, setBpm] = useState<number | null>(null);
 
@@ -57,6 +71,16 @@ function App() {
       <div>
         <h1>MQTT BPM Reader</h1>
         <p>Received BPM: {bpm !== null ? bpm : "Waiting for data..."}</p>
+
+        {regiments.length > 0 ? (
+          <ul>
+            {regiments.map((regiment, index) => (
+              <li key={index}>{regiment}</li>
+            ))}
+          </ul>
+        ) : (
+          <p>Loading...</p>
+        )}
       </div>
     </main>
   );
