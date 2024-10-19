@@ -1,30 +1,30 @@
-use chrono::{Date, DateTime, Local, NaiveDateTime, ParseError};
+use chrono::{Local, NaiveDateTime};
 use dotenv::dotenv;
-use rumqttc::{AsyncClient, Client, Event, MqttOptions, Packet, QoS};
+use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
+use serde_json::json;
 use sqlx::{Error, SqlitePool};
 use std::collections::HashMap;
 use std::env;
-use std::sync::Arc;
 use std::time::Duration;
-use tauri::{command, Emitter, Manager};
-use tokio::sync::Mutex;
+use tauri::{command, Emitter};
 use tokio::task;
 
-const DATABASE_URL: &str = "sqlite:./practice.db";
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct PracticePiece {
     name: String, // Each piece has a name, which could be NULL
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct PracticeRegiment {
-    id: i64,                    // Unique ID for the regiment
+    id: i64,
+    date: NaiveDateTime,        // Unique ID for the regiment
     pieces: Vec<PracticePiece>, // Vector of associated practice pieces
 }
 
 #[derive(Debug)]
 struct PracticeRow {
     regiment_id: i64,
+    date: NaiveDateTime,
     piece_name: String, // This allows for NULL values in `name`
 }
 
@@ -49,15 +49,13 @@ async fn create_full_regiment(pool: tauri::State<'_, SqlitePool>) -> Result<(), 
 }
 
 #[command]
-async fn load_practice_regiments(
-    pool: tauri::State<'_, SqlitePool>,
-) -> Result<Vec<String>, String> {
+async fn load_practice_regiments(pool: tauri::State<'_, SqlitePool>) -> Result<String, String> {
     // Fetch practice regiments and their associated piece names
     // Fetch regiments and their associated pieces
     let rows = sqlx::query_as!(
         PracticeRow,
         r#"
-            SELECT pr.id as "regiment_id!",  pn.name as piece_name
+            SELECT pr.id as "regiment_id!", pr.date as "date!",  pn.name as piece_name
             FROM practice_regiment pr
             LEFT JOIN practice_piece pn ON pr.id = pn.practice_regiment_id
             ORDER BY pr.date DESC
@@ -73,7 +71,7 @@ async fn load_practice_regiments(
     // Iterate through the results and group the pieces by regiment
     for row in rows {
         let regiment_id = row.regiment_id;
-
+        let date = row.date;
         // Parse `regiment_date` from String to NaiveDateTime
 
         // Get or insert the regiment
@@ -81,6 +79,7 @@ async fn load_practice_regiments(
             .entry(regiment_id)
             .or_insert(PracticeRegiment {
                 id: regiment_id,
+                date, // Non-nullable NaiveDateTime
                 pieces: Vec::new(),
             });
 
@@ -89,24 +88,10 @@ async fn load_practice_regiments(
             name: row.piece_name, // Non-nullable String
         });
     }
+    let regiments_vec: Vec<PracticeRegiment> = regiments_map.into_values().collect();
 
-    // Convert the regiments into a vector of formatted strings
-    let mut regiments = Vec::new();
-    for (_id, regiment) in regiments_map {
-        let mut regiment_info = format!("Regiment ID: {}", regiment.id);
-
-        // Add piece names to the regiment's display
-        for piece in regiment.pieces {
-            regiment_info.push_str(&format!(
-                "\n    Piece Name: {}",
-                piece.name // Non-nullable String
-            ));
-        }
-
-        regiments.push(regiment_info);
-    }
-
-    Ok(regiments) // Return the list of formatted strings
+    let json_data = json!(regiments_vec).to_string();
+    Ok(json_data) // Return the list of formatted strings
 }
 
 #[tokio::main]
@@ -128,7 +113,6 @@ async fn main() {
             let handle = app.handle().clone();
 
             task::spawn(async move {
-                let pool = sqlx::sqlite::SqlitePool::connect("").await.unwrap();
                 run_mqtt(handle).await;
             });
 
@@ -192,7 +176,7 @@ async fn run_mqtt(handle: tauri::AppHandle) {
     mqttoptions.set_keep_alive(Duration::from_secs(5));
 
     // Create the client synchronously
-    let (mut client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
+    let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
 
     // Subscribe to the topic where you send BPM data (this is async)
     client
