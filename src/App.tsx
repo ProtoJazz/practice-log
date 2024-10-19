@@ -1,8 +1,11 @@
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
+import "@blueprintjs/core/lib/css/blueprint.css";
+import "@blueprintjs/icons/lib/css/blueprint-icons.css";
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { Alignment, Button, Navbar } from "@blueprintjs/core";
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
@@ -10,6 +13,15 @@ function App() {
   async function greet() {
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
     setGreetMsg(await invoke("greet", { name }));
+  }
+  async function createFullRegiment() {
+    try {
+      await invoke("create_full_regiment"); // Call the Rust function
+      alert("Practice regiment created successfully!");
+    } catch (error) {
+      console.error("Error creating practice regiment:", error); // Log detailed error to the console
+      alert(`Failed to create practice regiment: ${error}`);
+    }
   }
 
   const [bpm, setBpm] = useState<number | null>(null);
@@ -27,40 +39,25 @@ function App() {
   }, []);
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+    <main className="bp5-dark">
+      <Navbar>
+        <Navbar.Group align={Alignment.LEFT}>
+          <Navbar.Heading>Blueprint</Navbar.Heading>
+          <Navbar.Divider />
+          <Button className="bp5-minimal" icon="home" text="Home" />
+          <Button
+            className="bp5-minimal"
+            icon="document"
+            text="Files"
+            onClick={createFullRegiment}
+          />
+        </Navbar.Group>
+      </Navbar>
+
       <div>
         <h1>MQTT BPM Reader</h1>
         <p>Received BPM: {bpm !== null ? bpm : "Waiting for data..."}</p>
       </div>
-      <div className="row">
-        <a href="https://vitejs.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://reactjs.org" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
     </main>
   );
 }
