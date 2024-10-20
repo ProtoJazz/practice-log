@@ -20,7 +20,6 @@ function CreatePracticeRegiment() {
   const addPracticePiece = () => {
     if (newPieceName.trim() === "") return; // Avoid adding empty names
     const newPiece: PracticePieces = {
-      id: Math.random().toString(36).substring(7), // Generate a random ID for the piece
       name: newPieceName,
     };
     setPieces((prevPieces) => [...prevPieces, newPiece]);
@@ -30,18 +29,22 @@ function CreatePracticeRegiment() {
   // Save the regiment
   const saveRegiment = async () => {
     const newRegiment: Regiment = {
-      id: Math.random().toString(36).substring(7), // Generate a random ID for the regiment
       date: dateValue ? moment(dateValue) : moment().local(),
       pieces: pieces,
     };
     console.log("Saved Regiment:", newRegiment);
     try {
-      await invoke("create_full_regiment", { regiment: newRegiment }); // Send the regiment to the backend
+      let toSave = {
+        date: newRegiment.date.format("YYYY-MM-DDTHH:mm:ss"),
+        pieces: newRegiment.pieces,
+      };
+      console.log("To SAve Regiment:", toSave);
+      await invoke("create_full_regiment", { regiment: toSave }); // Send the regiment to the backend
+
       console.log("Regiment saved successfully!");
     } catch (error) {
       console.error("Failed to save regiment:", error);
     }
-    // Here, you would typically call a function to send this regiment to your backend
   };
 
   return (

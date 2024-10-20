@@ -13,6 +13,7 @@ import moment from "moment";
 function PracticeRegiments() {
   const [regiments, setRegiments] = useState<Regiment[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [activePiece, setActivePiece] = useState<number | null>(null);
 
   const regimentReviver = (key: string, value: any) => {
     if (key === "date") {
@@ -25,14 +26,44 @@ function PracticeRegiments() {
     try {
       const loadedRegiments: string = await invoke("load_practice_regiments");
       let parsedRegiments = JSON.parse(loadedRegiments, regimentReviver);
+      console.log("Loaded regiments:", parsedRegiments);
       setRegiments(parsedRegiments);
     } catch (error) {
       console.error("Failed to load regiments:", error);
     }
   }
 
+  const getActivePiece = async () => {
+    try {
+      const activePieceId = await invoke("get_active_piece");
+      console.log("Active practice piece ID:", activePieceId);
+      return activePieceId;
+    } catch (error) {
+      console.error("Failed to retrieve active practice piece:", error);
+    }
+  };
+
+  const markPieceAsActive = async (practicePieceId: number | undefined) => {
+    if (practicePieceId === undefined) {
+      console.error("Invalid practice piece ID:", practicePieceId);
+      return;
+    }
+    console.log("Marking practice piece as active:", practicePieceId);
+    try {
+      await invoke("mark_active_piece", { practicePieceId: practicePieceId });
+      console.log("Practice piece marked as active!");
+      setActivePiece(practicePieceId);
+    } catch (error) {
+      console.error("Failed to mark practice piece as active:", error);
+    }
+  };
+
   useEffect(() => {
     loadRegiments();
+  }, []);
+
+  useEffect(() => {
+    getActivePiece();
   }, []);
 
   return (
@@ -47,7 +78,17 @@ function PracticeRegiments() {
               className="regiment-section"
             >
               {regiment.pieces.map((piece, index) => (
-                <SectionCard padded>{piece.name}</SectionCard>
+                <SectionCard padded>
+                  {piece.name}
+                  <Button
+                    onClick={() => {
+                      markPieceAsActive(piece.id);
+                    }}
+                    disabled={activePiece === piece.id}
+                  >
+                    Mark as Active
+                  </Button>
+                </SectionCard>
               ))}
             </Section>
           ))}

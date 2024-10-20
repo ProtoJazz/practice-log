@@ -1,11 +1,11 @@
 import { Moment } from "moment";
 
 export type Regiment = {
-  id: string;
+  id?: number;
   date: Moment;
   pieces: PracticePieces[];
 };
 export type PracticePieces = {
-  id: string;
+  id?: number;
   name: string;
 };
