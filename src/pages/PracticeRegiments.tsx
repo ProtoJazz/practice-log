@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Regiment } from "../types";
+import { PracticePieceLogs, Regiment } from "../types";
 import {
   Button,
   Card,
@@ -9,6 +9,7 @@ import {
   SectionCard,
 } from "@blueprintjs/core";
 import moment from "moment";
+import { Sparklines, SparklinesLine } from "react-sparklines";
 
 function PracticeRegiments() {
   const [regiments, setRegiments] = useState<Regiment[]>([]);
@@ -16,15 +17,33 @@ function PracticeRegiments() {
   const [activePiece, setActivePiece] = useState<number | null>(null);
 
   const regimentReviver = (key: string, value: any) => {
-    if (key === "date") {
+    if (key === "date" || key === "timestamp") {
       return moment(value);
     }
     return value;
   };
+  type LogSparkProps = {
+    logs: PracticePieceLogs[];
+  };
+  const LogSpark = (props: LogSparkProps) => {
+    const bpmValues = props.logs.map((log) => log.bpm);
+    const maxBpm = Math.max(...bpmValues);
+
+    return (
+      <div>
+        <span>Max BPM: {maxBpm}</span>
+        <div className="log-graph">
+          <Sparklines data={bpmValues}>
+            <SparklinesLine color="blue" />
+          </Sparklines>
+        </div>
+      </div>
+    );
+  };
 
   async function loadRegiments() {
     try {
-      const loadedRegiments: string = await invoke("load_practice_regiments");
+      const loadedRegiments: string = await invoke("load_practice_regiments_2");
       let parsedRegiments = JSON.parse(loadedRegiments, regimentReviver);
       console.log("Loaded regiments:", parsedRegiments);
       setRegiments(parsedRegiments);
@@ -78,17 +97,22 @@ function PracticeRegiments() {
               className="regiment-section"
             >
               {regiment.pieces.map((piece, index) => (
-                <SectionCard padded>
-                  {piece.name}
-                  <Button
-                    onClick={() => {
-                      markPieceAsActive(piece.id);
-                    }}
-                    disabled={activePiece === piece.id}
-                  >
-                    Mark as Active
-                  </Button>
-                </SectionCard>
+                <>
+                  <SectionCard padded>
+                    {piece.name}
+                    <Button
+                      onClick={() => {
+                        markPieceAsActive(piece.id);
+                      }}
+                      disabled={activePiece === piece.id}
+                    >
+                      Mark as Active
+                    </Button>
+                  </SectionCard>
+                  <SectionCard padded>
+                    <LogSpark logs={piece.logs} />
+                  </SectionCard>
+                </>
               ))}
             </Section>
           ))}

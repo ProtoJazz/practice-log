@@ -8,4 +8,12 @@ export type Regiment = {
 export type PracticePieces = {
   id?: number;
   name: string;
+  logs: PracticePieceLogs[];
+};
+
+export type PracticePieceLogs = {
+  id?: number;
+  practice_piece_id: number;
+  bpm: number;
+  timestamp: Moment;
 };

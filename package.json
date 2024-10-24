@@ -15,10 +15,12 @@
     "@blueprintjs/icons": "^5.13.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-shell": "^2",
+    "chart.js": "^4.4.5",
     "moment": "^2.30.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-router-dom": "^6.27.0"
+    "react-router-dom": "^6.27.0",
+    "react-sparklines": "^1.7.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

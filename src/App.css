@@ -118,3 +118,8 @@ button {
 .regiment-section {
     margin: 5px;
 }
+
+.log-graph {
+    width: 200px;
+    height: 100px;
+}
