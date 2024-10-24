@@ -10,13 +10,33 @@ use std::time::Duration;
 use tauri::State;
 use tauri::{command, Emitter};
 use tokio::task;
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
 struct PracticePiece {
-    id: Option<i64>, // Unique ID for the piece
-    name: String,    // Each piece has a name, which could be NULL
+    id: Option<i64>,        // Unique ID for the piece
+    name: String,           // Each piece has a name, which could be NULL
+    logs: Vec<PracticeLog>, // Vector of associated practice logs
+}
+#[derive(Debug, sqlx::FromRow)]
+struct RegimenPieceLog {
+    regimen_id: i64,
+    regimen_date: NaiveDateTime,
+    piece_id: Option<i64>,
+    piece_name: Option<String>,
+    log_id: Option<i64>,
+    log_bpm: Option<i64>,
+    log_timestamp: Option<NaiveDateTime>,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+struct PracticeLog {
+    id: Option<i64>,          // Unique ID for the log
+    practice_piece_id: i64,   // Foreign key to `practice_piece`,
+    bpm: i64,                 // The BPM value at the time of the log
+    timestamp: NaiveDateTime, // The timestamp of the log
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
 struct PracticeRegiment {
     id: Option<i64>,
     date: NaiveDateTime,        // Unique ID for the regiment
@@ -69,6 +89,77 @@ async fn get_active_piece(
         .map_err(|e| format!("Failed to lock mutex: {:?}", e))?;
     Ok(*active) // Return the currently active practice piece ID (if any)
 }
+#[command]
+async fn load_practice_regiments_2(pool: tauri::State<'_, SqlitePool>) -> Result<String, String> {
+    let results: Vec<RegimenPieceLog> = sqlx::query_as(
+        r#"
+        SELECT
+            r.id as regimen_id, r.date as regimen_date,
+            p.id as piece_id, p.name as piece_name,
+            l.id as log_id, l.bpm as log_bpm, l.timestamp as log_timestamp
+        FROM
+            practice_regiment r
+        LEFT JOIN
+            practice_piece p ON r.id = p.practice_regiment_id
+        LEFT JOIN
+            practice_piece_log_entry l ON p.id = l.practice_piece_id
+        ORDER BY
+            r.date DESC;
+        "#,
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| format!("Failed to load data: {}", e))?;
+
+    // Organize the data into nested structs
+    let mut regimen_map = std::collections::HashMap::new();
+
+    for row in results {
+        let regimen = regimen_map
+            .entry(row.regimen_id)
+            .or_insert_with(|| PracticeRegiment {
+                id: Some(row.regimen_id),
+                date: row.regimen_date,
+                pieces: vec![],
+            });
+
+        if let Some(piece_id) = row.piece_id {
+            let piece = regimen.pieces.iter_mut().find(|p| p.id == Some(piece_id));
+
+            if let Some(existing_piece) = piece {
+                if let Some(log_id) = row.log_id {
+                    existing_piece.logs.push(PracticeLog {
+                        id: Some(log_id),
+                        practice_piece_id: piece_id,
+                        bpm: row.log_bpm.unwrap_or_default(),
+                        timestamp: row.log_timestamp.unwrap(),
+                    });
+                }
+            } else {
+                let mut new_piece = PracticePiece {
+                    id: Some(piece_id),
+                    name: row.piece_name.unwrap_or_default(),
+                    logs: vec![],
+                };
+
+                if let Some(log_id) = row.log_id {
+                    new_piece.logs.push(PracticeLog {
+                        id: Some(log_id),
+                        practice_piece_id: piece_id,
+                        bpm: row.log_bpm.unwrap_or_default(),
+                        timestamp: row.log_timestamp.unwrap(),
+                    });
+                }
+
+                regimen.pieces.push(new_piece);
+            }
+        }
+    }
+
+    let regimens: Vec<PracticeRegiment> = regimen_map.into_values().collect();
+
+    Ok(serde_json::to_string(&regimens).map_err(|e| format!("Serialization failed: {}", e))?)
+}
 
 #[command]
 async fn load_practice_regiments(pool: tauri::State<'_, SqlitePool>) -> Result<String, String> {
@@ -108,6 +199,7 @@ async fn load_practice_regiments(pool: tauri::State<'_, SqlitePool>) -> Result<S
         regiment.pieces.push(PracticePiece {
             id: Some(row.piece_id), // Non-nullable i64
             name: row.piece_name,   // Non-nullable String
+            logs: Vec::new(),
         });
     }
     let regiments_vec: Vec<PracticeRegiment> = regiments_map.into_values().collect();
@@ -147,7 +239,8 @@ async fn main() {
             mark_active_piece,
             get_active_piece,
             create_full_regiment,
-            load_practice_regiments
+            load_practice_regiments,
+            load_practice_regiments_2,
         ]) // Register the command
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
